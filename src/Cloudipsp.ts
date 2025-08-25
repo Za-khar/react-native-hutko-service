@@ -21,12 +21,19 @@ export class Cloudipsp {
   private readonly __merchantId__: number;
   private readonly __cloudipspView__: CloudipspWebviewProvider;
 
-  private readonly __baseUrl__ = 'https://pay.hutko.org/';
+  public __baseUrl__: string = 'https://pay.hutko.org/';
   private readonly __callbackUrl__ = 'http://callback';
 
-  constructor(merchantId: number = req('merchantId'), cloudipspView: CloudipspWebviewProvider = req('cloudipspView')) {
+  constructor(
+      merchantId: number = req('merchantId'),
+      cloudipspView: CloudipspWebviewProvider = req('cloudipspView'),
+      baseUrl?: string,
+    ) {
     this.__merchantId__ = merchantId;
     this.__cloudipspView__ = cloudipspView;
+    if (baseUrl) {
+      this.__baseUrl__ = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+    }
 
     if (!RNWebView) {
       throw new Error('"react-native-webview" module required');
