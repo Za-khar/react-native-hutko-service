@@ -1,26 +1,28 @@
 <img src="Logo.png" alt="SDK Logo" width="552" />
 
+
 ## Installation (English) / Встановлення (Українською)
+
+
 **English:**  
-To add the library, run:
+To add the library, run (basic method):
 
 ~~~bash
 npm install github:hutko-service/react-native-sdk
 ~~~
-(basic method), or:
+or (if you use Yarn):
 ~~~bash
 yarn add github:hutko-service/react-native-sdk
 ~~~
-(if you use Yarn).
+
 
 **Українською:**  
-Щоб додати бібліотеку, виконайте:
+Щоб додати бібліотеку, виконайте (базовий спосіб):
 
 ~~~bash
 npm install github:hutko-service/react-native-sdk
 ~~~
-(базовий спосіб), або:
+або (якщо використовуєте Yarn):
 ~~~bash
 yarn add github:hutko-service/react-native-sdk
 ~~~
-(якщо використовуєте Yarn).
