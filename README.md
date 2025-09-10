@@ -1,5 +1,6 @@
-## Installation (English) / Встановлення (Українською)
+<img src="Logo.png" alt="SDK Logo" width="552" />
 
+## Installation (English) / Встановлення (Українською)
 **English:**  
 To add the library, run:
 
