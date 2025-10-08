@@ -78,6 +78,20 @@ interface PaymentConfig {
   businessName: string;
 }
 
+const padStart = (
+  str: string | number,
+  targetLength: number,
+  padString: string = '0',
+): string => {
+  const string = String(str);
+  if (string.length >= targetLength) {
+    return string;
+  }
+
+  const padding = padString.repeat(targetLength);
+  return (padding + string).slice(-targetLength);
+};
+
 export class Cloudipsp {
   private readonly merchantId: number;
   private readonly cloudipspView: CloudipspWebviewProvider;
@@ -383,7 +397,7 @@ export class Cloudipsp {
     const cp = card as unknown as CardPrivate;
     const mm = cp.__getExpMm__();
     const yy = cp.__getExpYy__();
-    const expiry = `${String(mm).padStart(2, '0')}${yy}`;
+    const expiry = `${padStart(mm, 2)}${yy}`;
 
     const payload: Record<string, unknown> = {
       card_number: cp.__getCardNumber__(),
