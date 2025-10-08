@@ -51,12 +51,74 @@ module.exports = {
     'no-shadow': 'off',
     'no-var': 'error',
     'no-console': 'warn',
-    'prettier/prettier': ['error', {endOfLine: 'auto'}],
+    'prettier/prettier': ['error', { endOfLine: 'auto' }],
     'react-native/no-inline-styles': 'error',
     'react/self-closing-comp': 'error',
     'react-hooks/exhaustive-deps': 'off',
     'multiline-ternary': ['error', 'always-multiline'],
     'no-nested-ternary': 'off',
+    'import/order': [
+      'error',
+      {
+        'newlines-between': 'always-and-inside-groups',
+        alphabetize: {
+          order: 'asc',
+          orderImportKind: 'asc',
+          caseInsensitive: true,
+        },
+
+        pathGroups: [
+          {
+            pattern: 'react{,-native}',
+            group: 'builtin',
+            position: 'before',
+          },
+          {
+            pattern: '@assets{,/**}',
+            group: 'internal',
+            position: 'before',
+          },
+          {
+            pattern: '@/app{,/**}',
+            group: 'internal',
+            position: 'before',
+          },
+          {
+            pattern: '@/widgets{,/**}',
+            group: 'internal',
+            position: 'before',
+          },
+          {
+            pattern: '@/features{,/**}',
+            group: 'internal',
+            position: 'after',
+          },
+          {
+            pattern: '@/entities{,/**}',
+            group: 'internal',
+            position: 'after',
+          },
+          {
+            pattern: '@/shared{,/**}',
+            group: 'internal',
+            position: 'after',
+          },
+        ],
+
+        pathGroupsExcludedImportTypes: ['react{,-native}'],
+
+        groups: [
+          'builtin',
+          'external',
+          'internal',
+          'parent',
+          'sibling',
+          'index',
+          'object',
+          'type',
+        ],
+      },
+    ],
   },
   settings: {
     'import/resolver': {
@@ -64,4 +126,4 @@ module.exports = {
       node: true,
     },
   },
-};
+}

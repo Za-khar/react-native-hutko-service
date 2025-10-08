@@ -27,12 +27,13 @@ export class Order {
   private _recToken?: string;
   private _delayed?: boolean;
 
-  constructor(amount: number = req('amount'),
-              currency: Currency | string = req('currency'),
-              orderId: string = req('orderId'),
-              description: string = req('description'),
-              email: string) {
-
+  constructor(
+    amount: number = req('amount'),
+    currency: Currency | string = req('currency'),
+    orderId: string = req('orderId'),
+    description: string = req('description'),
+    email: string,
+  ) {
     this.amount = amount;
     if (typeof currency === 'string') {
       this.currency = currency;

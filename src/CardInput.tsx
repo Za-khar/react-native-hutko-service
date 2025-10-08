@@ -68,8 +68,7 @@ export class CardInput extends React.Component<Props> {
         inputNumber={this._inputNumberProvider}
         inputExpMm={this._inputExpMmProvider}
         inputExpYy={this._inputExpYyProvider}
-        inputCvv={this._inputCvvProvider}
-      >
+        inputCvv={this._inputCvvProvider}>
         <Text
           style={this.props.textStyle}
           onPress={this.props.debug ? this.test : undefined}>
@@ -81,7 +80,9 @@ export class CardInput extends React.Component<Props> {
           onSubmitEditing={this._onSubmitCardFieldNumber}
           style={this.props.textInputStyle}
         />
-        <Text style={this.props.textStyle}>{this.props.labelExpirity || 'Expiry:'}</Text>
+        <Text style={this.props.textStyle}>
+          {this.props.labelExpirity || 'Expiry:'}
+        </Text>
         <View style={styles.row}>
           <CardFieldExpMm
             ref={this._cardFieldExpMmRef}
@@ -93,9 +94,12 @@ export class CardInput extends React.Component<Props> {
             ref={this._cardFieldExpYyRef}
             placeholder={this.props.placeholderYY || 'YY'}
             onSubmitEditing={this._onSubmitCardFieldExpYy}
-            style={[styles.flex1, this.props.textInputStyle]}/>
+            style={[styles.flex1, this.props.textInputStyle]}
+          />
         </View>
-        <Text style={this.props.textStyle}>{this.props.labelCVV || 'CVV:'}</Text>
+        <Text style={this.props.textStyle}>
+          {this.props.labelCVV || 'CVV:'}
+        </Text>
         <CardFieldCvv
           ref={this._cardFieldCvvRef}
           placeholder={this.props.placeholderCVV}
@@ -125,9 +129,9 @@ export class CardInput extends React.Component<Props> {
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row'
+    flexDirection: 'row',
   },
   flex1: {
-    flex: 1
-  }
+    flex: 1,
+  },
 });

@@ -23,7 +23,6 @@ type Props = {
 
 type Input = 'inputNumber' | 'inputExpMm' | 'inputExpYy' | 'inputCvv';
 
-
 export class CardLayout extends React.Component<Props> {
   private _inputNumber!: CardFieldBasePrivate;
   private _inputExpMm!: CardFieldBasePrivate;
@@ -132,13 +131,13 @@ export class CardLayout extends React.Component<Props> {
   }
 
   render(): React.ReactNode {
-    return (
-      <View style={this.props.containerStyle}>
-        {this.props.children}
-      </View>);
+    return <View style={this.props.containerStyle}>{this.props.children}</View>;
   }
 
-  private readonly _pullInput = <T extends CardFieldBasePrivate, C extends typeof CardFieldBase>(
+  private readonly _pullInput = <
+    T extends CardFieldBasePrivate,
+    C extends typeof CardFieldBase,
+  >(
     input: Input,
     component: C,
   ): T => {
@@ -150,14 +149,20 @@ export class CardLayout extends React.Component<Props> {
     if (!instancePrivate._selfName) {
       throw new Error('Invalid component for "' + input + '"');
     }
-    let selfName = instancePrivate._selfName();
+    const selfName = instancePrivate._selfName();
     if (!selfName) {
       throw new Error('Missed result value for "' + input + '"');
     }
-    let componentName = component.getInputName();
+    const componentName = component.getInputName();
     if (componentName !== selfName) {
-      throw new Error('Unexpected component "' + selfName + '" was set at "' + componentName + '" place');
+      throw new Error(
+        'Unexpected component "' +
+          selfName +
+          '" was set at "' +
+          componentName +
+          '" place',
+      );
     }
     return instancePrivate as unknown as T;
-  }
+  };
 }

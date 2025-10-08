@@ -1,6 +1,8 @@
 import {Platform} from 'react-native';
-import RNWebView from 'react-native-webview';
+import {WebView as RNWebView} from 'react-native-webview';
 
+import {ApplePayInfo, Native} from './Native';
+import {CloudipspWebView, CloudipspWebviewProvider} from './CloudipspWebview';
 import {
   Card,
   CardPrivate,
@@ -8,432 +10,500 @@ import {
   Order,
   OrderPrivate,
   Receipt,
+  ReceiptData,
   req,
 } from './models';
-import {
-  CloudipspWebView,
-  CloudipspWebviewPrivate,
-  CloudipspWebviewProvider,
-} from './CloudipspWebview';
-import {Native} from './Native';
+import {ApiClient} from './models/ApiClient';
+
+const DEFAULT_BASE_URL = 'https://pay.hutko.org/';
+const DEFAULT_CALLBACK_URL = 'http://callback';
+
+const ENDPOINTS = {
+  MOBILE_PAY: 'api/checkout/ajax/mobile_pay',
+  TOKEN: 'api/checkout/token',
+  CHECKOUT_AJAX: 'api/checkout/ajax',
+  MERCHANT_ORDER: 'api/checkout/merchant/order',
+} as const;
+
+type Currency = string;
+
+interface MobilePayMethod {
+  supportedMethods: string;
+  data: unknown;
+}
+
+interface MobilePayResponse {
+  payment_system: string;
+  methods: MobilePayMethod[];
+  details: {
+    total: {
+      label: string;
+    };
+  };
+  error_message?: string;
+  error_code?: string;
+  request_id?: string;
+}
+
+interface TokenResponse {
+  token: string;
+}
+
+interface OrderResponse {
+  order_data: ReceiptData;
+  response_url?: string;
+  response_url_mobile?: string;
+  response_status?: 'success' | 'failure';
+  response?: unknown;
+  error_message?: string;
+  error_code?: number;
+  request_id?: string;
+}
+
+interface CheckoutResponse {
+  url: string;
+  send_data: ThreeDSData;
+}
+
+interface ThreeDSData {
+  PaReq: string;
+  MD?: string;
+  TermUrl?: string;
+  [k: string]: unknown;
+}
+
+interface PaymentConfig {
+  payment_system: string;
+  data: unknown;
+  businessName: string;
+}
 
 export class Cloudipsp {
-  private readonly __merchantId__: number;
-  private readonly __cloudipspView__: CloudipspWebviewProvider;
-
-  public __baseUrl__: string = 'https://pay.hutko.org/';
-  private readonly __callbackUrl__ = 'http://callback';
+  private readonly merchantId: number;
+  private readonly cloudipspView: CloudipspWebviewProvider;
+  public baseUrl: string;
+  private readonly callbackUrl: string;
+  private readonly apiClient: ApiClient;
 
   constructor(
-      merchantId: number = req('merchantId'),
-      cloudipspView: CloudipspWebviewProvider = req('cloudipspView'),
-      baseUrl?: string,
-    ) {
-    this.__merchantId__ = merchantId;
-    this.__cloudipspView__ = cloudipspView;
-    if (baseUrl) {
-      this.__baseUrl__ = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
-    }
+    merchantId: number = req('merchantId'),
+    cloudipspView: CloudipspWebviewProvider = req('cloudipspView'),
+    baseUrl?: string,
+    callbackUrl?: string,
+  ) {
+    this.merchantId = merchantId;
+    this.cloudipspView = cloudipspView;
+    this.baseUrl = baseUrl
+      ? baseUrl.endsWith('/')
+        ? baseUrl
+        : baseUrl + '/'
+      : DEFAULT_BASE_URL;
+    this.callbackUrl = callbackUrl ?? DEFAULT_CALLBACK_URL;
+    this.apiClient = new ApiClient(this.baseUrl);
 
+    // Quick runtime check — keep it as early failure for consumers
     if (!RNWebView) {
       throw new Error('"react-native-webview" module required');
     }
   }
 
-  static supportsApplePay(): Promise<boolean> {
-    if (Platform.OS === 'ios') {
-      return Native.supportsApplePay();
-    } else {
-      return Promise.resolve(false);
-    }
+  // -------------------------
+  // Platform Helpers
+  // -------------------------
+  static async supportsApplePay(): Promise<boolean> {
+    return Platform.OS === 'ios' ? Native.supportsApplePay() : false;
   }
 
-  static supportsGooglePay(): Promise<boolean> {
-    if (Platform.OS === 'android') {
-      return Native.supportsGooglePay();
-    } else {
-      return Promise.resolve(false);
-    }
+  static async supportsGooglePay(): Promise<boolean> {
+    return Platform.OS === 'android' ? Native.supportsGooglePay() : false;
   }
 
-  pay(card: Card = req('card'), order: Order = req('order')): Promise<Receipt> {
-    if (!card.isValidCard()) {
-      throw new Error('Card is not valid');
-    }
-
-    return this.__getToken__(order)
-      .then((token) => {
-        return this.__checkout__(token, card, order.email)
-          .then((checkout) => this.__payContinue__(checkout, token, this.__callbackUrl__));
-      });
-  }
-
-  public payToken(card: Card = req('card'), token: string = req('token')): Promise<Receipt> {
-    if (!card.isValidCard()) {
-      throw new Error('Card is not valid');
-    }
-
-    let callbackUrl: string;
-    return this.__getCallbackUrl__(token)
-      .then((_callbackUrl) => {
-        callbackUrl = _callbackUrl;
-        return this.__checkout__(token, card, undefined);
-      })
-      .then((checkout) => this.__payContinue__(checkout, token, callbackUrl));
-  }
-
-  public static __assertApplePay__() {
+  private static assertApplePayAvailable(): void {
     if (Platform.OS !== 'ios') {
-      return Promise.reject(new Error('ApplePay available only for iOS'));
+      throw new Error('ApplePay available only for iOS');
     }
   }
 
-  public applePayToken(token: string = req('token')): Promise<Receipt> {
-    Cloudipsp.__assertApplePay__();
-    let config: any, applePayInfo: any, receiptFromToken: Receipt, receiptFinal: Receipt;
-    return this.__order__(token)
-      .then((receipt) => {
-        receiptFromToken = receipt;
-        return this.__getPaymentConfig__(null, null, token, 'https://apple.com/apple-pay', 'ApplePay');
-      })
-      .then((_config) => {
-        config = _config;
-        return Native.applePay(config, receiptFromToken.amount, receiptFromToken.currency, ' ');
-      })
-      .then((_applePayInfo) => {
-        applePayInfo = _applePayInfo;
-        return this.__checkoutApplePay__(token, receiptFromToken.email, config.payment_system, applePayInfo);
-      })
-      .then((checkout) => this.__payContinue__(checkout, token, receiptFromToken.responseUrl!))
-      .then((receipt) => {
-        receiptFinal = receipt;
-        return Native.applePayComplete(true);
-      })
-      .then(() => receiptFinal)
-      .catch((error) => {
-        Native.applePayComplete(false);
-        throw error;
-      });
-  }
-
-  applePay(order: Order = req('order')): Promise<Receipt> {
-    Cloudipsp.__assertApplePay__();
-    let config: any, applePayInfo: any, token: string, receipt: Receipt;
-    return this.__getPaymentConfig__(order.amount, order.currency, null, 'https://apple.com/apple-pay', 'ApplePay')
-      .then((_config) => {
-        config = _config;
-        return Native.applePay(config, order.amount, order.currency, order.description);
-      })
-      .then((_applePayInfo) => {
-        applePayInfo = _applePayInfo;
-        return this.__getToken__(order);
-      })
-      .then((_token) => {
-        token = _token;
-        return this.__checkoutApplePay__(token, order.email, config.payment_system, applePayInfo);
-      })
-      .then((checkout) => this.__payContinue__(checkout, token, this.__callbackUrl__))
-      .then((_receipt) => {
-        receipt = _receipt;
-        return Native.applePayComplete(true);
-      })
-      .then(() => receipt)
-      .catch((error) => {
-        Native.applePayComplete(false);
-        throw error;
-      });
-  }
-
-  static __assertGooglePay__() {
+  private static assertGooglePayAvailable(): void {
     if (Platform.OS !== 'android') {
-      return Promise.reject(new Error('GooglePay available only for Android'));
+      throw new Error('GooglePay available only for Android');
     }
   }
 
-  public googlePayToken(token: string = req('token')): Promise<Receipt> {
-    Cloudipsp.__assertGooglePay__();
-    let config: any, receiptFromToken: Receipt;
-    return this.__order__(token)
-      .then((receipt) => {
-        receiptFromToken = receipt;
-        return this.__getPaymentConfig__(null, null, token, 'https://google.com/pay', 'GooglePay')
-      })
-      .then((_config) => {
-        config = _config;
-        return Native.googlePay(config.data);
-      })
-      .then((googlePayInfo) => {
-        return this.__checkoutGooglePay__(token, receiptFromToken.email, config.payment_system, googlePayInfo);
-      })
-      .then((checkout) => this.__payContinue__(checkout, token, receiptFromToken.responseUrl!));
+  // -------------------------
+  // Public Payments API
+  // -------------------------
+  async pay(
+    card: Card = req('card'),
+    order: Order = req('order'),
+  ): Promise<Receipt> {
+    if (!card.isValidCard()) throw new Error('Card is not valid');
+
+    const token = await this.getToken(order);
+    const checkout = await this.checkout(token, card, order.email);
+    return this.continuePayment(checkout, token, this.callbackUrl);
   }
 
-  public googlePay(order: Order = req('order')): Promise<Receipt> {
-    Cloudipsp.__assertGooglePay__();
-    let config: any, googlePayInfo: any, token: string;
-    return this.__getPaymentConfig__(order.amount, order.currency, null, 'https://google.com/pay', 'GooglePay')
-      .then((_config) => {
-        config = _config;
-        return Native.googlePay(config.data);
-      })
-      .then((_googlePayInfo) => {
-        googlePayInfo = _googlePayInfo;
-        return this.__getToken__(order);
-      })
-      .then((_token) => {
-        token = _token;
-        return this.__checkoutGooglePay__(token, order.email, config.payment_system, googlePayInfo);
-      })
-      .then((checkout) => this.__payContinue__(checkout, token, this.__callbackUrl__));
+  async payToken(
+    card: Card = req('card'),
+    token: string = req('token'),
+  ): Promise<Receipt> {
+    if (!card.isValidCard()) throw new Error('Card is not valid');
+
+    const callbackUrl = await this.getCallbackUrl(token);
+    const checkout = await this.checkout(token, card, undefined);
+    return this.continuePayment(checkout, token, callbackUrl);
   }
 
-  private __getPaymentConfig__(
+  // Apple Pay (order -> starts apple flow)
+  async applePay(order: Order = req('order')): Promise<Receipt> {
+    Cloudipsp.assertApplePayAvailable();
+
+    const config = await this.getPaymentConfig(
+      order.amount,
+      order.currency,
+      null,
+      'https://apple.com/apple-pay',
+      'ApplePay',
+    );
+    const appleInfo: ApplePayInfo = await Native.applePay(
+      config,
+      order.amount,
+      order.currency,
+      order.description,
+    );
+
+    const token = await this.getToken(order);
+    const checkout = await this.checkoutApplePay(
+      token,
+      order.email,
+      config.payment_system,
+      appleInfo,
+    );
+
+    try {
+      const receipt = await this.continuePayment(
+        checkout,
+        token,
+        this.callbackUrl,
+      );
+      await Native.applePayComplete(true);
+      return receipt;
+    } catch (err) {
+      await Native.applePayComplete(false);
+      throw err;
+    }
+  }
+
+  // Apple Pay when you already have token
+  async applePayToken(token: string = req('token')): Promise<Receipt> {
+    Cloudipsp.assertApplePayAvailable();
+
+    const receiptFromToken = await this.getOrder(token);
+    const config = await this.getPaymentConfig(
+      null,
+      null,
+      token,
+      'https://apple.com/apple-pay',
+      'ApplePay',
+    );
+
+    const appleInfo: ApplePayInfo = await Native.applePay(
+      config,
+      receiptFromToken.amount,
+      receiptFromToken.currency,
+      ' ',
+    );
+    const checkout = await this.checkoutApplePay(
+      token,
+      receiptFromToken.email,
+      config.payment_system,
+      appleInfo,
+    );
+
+    try {
+      const receipt = await this.continuePayment(
+        checkout,
+        token,
+        receiptFromToken.responseUrl ?? this.callbackUrl,
+      );
+      await Native.applePayComplete(true);
+      return receipt;
+    } catch (err) {
+      await Native.applePayComplete(false);
+      throw err;
+    }
+  }
+
+  // Google Pay (order)
+  async googlePay(order: Order = req('order')): Promise<Receipt> {
+    Cloudipsp.assertGooglePayAvailable();
+
+    const config = await this.getPaymentConfig(
+      order.amount,
+      order.currency,
+      null,
+      'https://google.com/pay',
+      'GooglePay',
+    );
+    const googlePayload = await Native.googlePay(config.data);
+    const token = await this.getToken(order);
+    const checkout = await this.checkoutGooglePay(
+      token,
+      order.email,
+      config.payment_system,
+      googlePayload,
+    );
+
+    return this.continuePayment(checkout, token, this.callbackUrl);
+  }
+
+  // Google Pay (token)
+  async googlePayToken(token: string = req('token')): Promise<Receipt> {
+    Cloudipsp.assertGooglePayAvailable();
+
+    const receiptFromToken = await this.getOrder(token);
+    const config = await this.getPaymentConfig(
+      null,
+      null,
+      token,
+      'https://google.com/pay',
+      'GooglePay',
+    );
+    const googlePayload = await Native.googlePay(config.data);
+    const checkout = await this.checkoutGooglePay(
+      token,
+      receiptFromToken.email,
+      config.payment_system,
+      googlePayload,
+    );
+
+    return this.continuePayment(
+      checkout,
+      token,
+      receiptFromToken.responseUrl ?? this.callbackUrl,
+    );
+  }
+
+  // -------------------------
+  // Internal flows & helpers
+  // -------------------------
+  private async getPaymentConfig(
     amount: number | null,
-    currency: string | null,
+    currency: Currency | null,
     token: string | null,
     methodId: string,
     methodName: string,
-  ): Promise<any> {
-    const request = token ?
-      { token } :
-      {
-        merchant_id: this.__merchantId__,
-        currency,
-        amount
-      };
-    return this.__callJson__('/api/checkout/ajax/mobile_pay', request)
-      .then((response) => {
-        if (response.error_message) {
-          this.__handleResponseError__(response);
-        }
-        let data;
-        for (let i = 0; i < response.methods.length; ++i) {
-          const method = response.methods[i];
-          if (method.supportedMethods === methodId) {
-            data = method.data;
-            break;
-          }
-        }
-        if (!data) {
-          if (token) {
-            throw new Error(`${methodName} is not supported for token "${token}"`);
-          } else {
-            throw new Error(`${methodName} is not supported for merchant ${this.__merchantId__} and currency ${currency}`);
-          }
-        }
-        const totalDetails = response.details.total;
+  ): Promise<PaymentConfig> {
+    const request = token
+      ? {token}
+      : {merchant_id: this.merchantId, currency, amount};
+    const response = (await this.apiClient.post<
+      typeof request,
+      MobilePayResponse
+    >(ENDPOINTS.MOBILE_PAY, request)) as MobilePayResponse;
 
-        return {
-          payment_system: response.payment_system,
-          data,
-          businessName: totalDetails.label
-        }
-      });
+    // server-level error
+    if (response.error_message) {
+      this.throwResponseError(
+        response.error_message,
+        response.error_code,
+        response.request_id,
+      );
+    }
+
+    const method = response.methods.find(m => m.supportedMethods === methodId);
+    if (!method) {
+      if (token) {
+        throw new Error(`${methodName} is not supported for token "${token}"`);
+      }
+      throw new Error(
+        `${methodName} is not supported for merchant ${this.merchantId} and currency ${currency}`,
+      );
+    }
+
+    const businessName = response.details?.total?.label ?? '';
+    return {
+      payment_system: response.payment_system,
+      data: method.data,
+      businessName,
+    };
   }
 
-  private __getToken__(order: Order): Promise<string> {
-    let rqBody: any = {};
-    rqBody.merchant_id = this.__merchantId__;
-    rqBody.amount = String(order.amount);
-    rqBody.currency = order.currency;
-    rqBody.order_id = order.orderId;
-    rqBody.order_desc = order.description;
-    rqBody.email = order.email;
-
-    const orderPrivate = order as unknown as OrderPrivate;
-    if (orderPrivate._productId) {
-      rqBody.product_id = orderPrivate._productId;
-    }
-    if (orderPrivate._paymentSystems) {
-      rqBody.payment_systems = orderPrivate._paymentSystems;
-    }
-    if (orderPrivate._defaultPaymentSystem) {
-      rqBody.default_payment_system = orderPrivate._defaultPaymentSystem;
-    }
-    if (orderPrivate._lifeTime) {
-      rqBody.lifetime = orderPrivate._lifeTime;
-    }
-    if (orderPrivate._merchantData === undefined) {
-      rqBody.merchant_data = '[]';
-    } else {
-      rqBody.merchant_data = orderPrivate._merchantData;
-    }
-    if (orderPrivate._version) {
-      rqBody.version = orderPrivate._version;
-    }
-    if (orderPrivate._serverCallbackUrl) {
-      rqBody.server_callback_url = orderPrivate._serverCallbackUrl;
-    }
-    if (orderPrivate._lang) {
-      rqBody.lang = orderPrivate._lang.toString();
-    }
-    rqBody.preauth = orderPrivate._preAuth ? 'Y' : 'N';
-    rqBody.required_rectoken = orderPrivate._requiredRecToken ? 'Y' : 'N';
-    rqBody.verification = orderPrivate._verification ? 'Y' : 'N';
-    if (orderPrivate._verificationType) {
-      rqBody.verification_type = orderPrivate._verificationType.name;
-    }
-
-    rqBody = Object.assign(rqBody, orderPrivate._arguments);
-
-    rqBody.response_url = this.__callbackUrl__;
-    rqBody.delayed = orderPrivate._delayed ? 'Y' : 'N';
-
-    return this.__apiCall__('/api/checkout/token', rqBody)
-      .then(response => response.token);
+  private async getToken(order: Order): Promise<string> {
+    const body = this.buildTokenRequest(order);
+    const response = await this.apiClient.post<
+      Record<string, unknown>,
+      TokenResponse
+    >(ENDPOINTS.TOKEN, body);
+    if (!response?.token)
+      throw new Failure('Empty token response', '400', undefined);
+    return response.token;
   }
 
-  private __checkout__(token: string, card: Card, email: string | undefined) {
-    const buildExp = (mm: number, yy: number) => {
-      return (mm < 10 ? '0' : '') + mm + yy;
+  private buildTokenRequest(order: Order): Record<string, unknown> {
+    const op = order as unknown as OrderPrivate;
+    const base: Record<string, unknown> = {
+      merchant_id: this.merchantId,
+      amount: String(order.amount),
+      currency: order.currency,
+      order_id: order.orderId,
+      order_desc: order.description,
+      email: order.email,
+      response_url: this.callbackUrl,
     };
 
-    const cardPrivate = card as unknown as CardPrivate;
+    // add optional private fields only if present to avoid sending undefined
+    if (op._productId) base.product_id = op._productId;
+    if (op._paymentSystems) base.payment_systems = op._paymentSystems;
+    if (op._defaultPaymentSystem)
+      base.default_payment_system = op._defaultPaymentSystem;
+    if (op._lifeTime) base.lifetime = op._lifeTime;
+    base.merchant_data =
+      op._merchantData === undefined ? '[]' : op._merchantData;
+    if (op._version) base.version = op._version;
+    if (op._serverCallbackUrl) base.server_callback_url = op._serverCallbackUrl;
+    if (op._lang !== undefined) base.lang = String(op._lang);
+    base.preauth = op._preAuth ? 'Y' : 'N';
+    base.required_rectoken = op._requiredRecToken ? 'Y' : 'N';
+    base.verification = op._verification ? 'Y' : 'N';
+    if (op._verificationType)
+      base.verification_type = op._verificationType.name;
+    if (op._arguments) Object.assign(base, op._arguments);
+    base.delayed = op._delayed ? 'Y' : 'N';
 
-    const rqBody: any = {
-      card_number: cardPrivate.__getCardNumber__(),
-      expiry_date: buildExp(cardPrivate.__getExpMm__(), cardPrivate.__getExpYy__()),
+    return base;
+  }
+
+  private async checkout(
+    token: string,
+    card: Card,
+    email?: string,
+  ): Promise<CheckoutResponse> {
+    const cp = card as unknown as CardPrivate;
+    const mm = cp.__getExpMm__();
+    const yy = cp.__getExpYy__();
+    const expiry = `${String(mm).padStart(2, '0')}${yy}`;
+
+    const payload: Record<string, unknown> = {
+      card_number: cp.__getCardNumber__(),
+      expiry_date: expiry,
       token,
       email,
-      payment_system: 'card'
+      payment_system: 'card',
     };
+    if (card.getSource() === 'form') payload.cvv2 = cp.__getCvv__();
 
-    if (card.getSource() === 'form') {
-      rqBody.cvv2 = cardPrivate.__getCvv__();
-    }
-
-    return this.__apiCall__('/api/checkout/ajax', rqBody);
+    return this.apiClient.post<Record<string, unknown>, CheckoutResponse>(
+      ENDPOINTS.CHECKOUT_AJAX,
+      payload,
+    );
   }
 
-  private __checkoutApplePay__(
+  private async checkoutApplePay(
     token: string,
     email: string,
     paymentSystem: string,
-    applePayData: any
-  ): Promise<any> {
-    const rqBody = {
+    applePayData: ApplePayInfo,
+  ): Promise<CheckoutResponse> {
+    const payload = {
       token,
       email,
       payment_system: paymentSystem,
-      data: applePayData
+      data: applePayData,
     };
-    return this.__apiCall__('/api/checkout/ajax', rqBody);
+    return this.apiClient.post<typeof payload, CheckoutResponse>(
+      ENDPOINTS.CHECKOUT_AJAX,
+      payload,
+    );
   }
 
-  private __checkoutGooglePay__(
+  private async checkoutGooglePay(
     token: string,
     email: string,
     paymentSystem: string,
-    googlePayInfo: any,
-  ): Promise<any> {
-    const rqBody = {
-      token,
-      email,
-      payment_system: paymentSystem,
-      data: JSON.parse(googlePayInfo)
-    };
-    return this.__apiCall__('/api/checkout/ajax', rqBody);
+    googlePayInfo: string,
+  ): Promise<CheckoutResponse> {
+    const parsed = JSON.parse(googlePayInfo);
+    const payload = {token, email, payment_system: paymentSystem, data: parsed};
+    return this.apiClient.post<typeof payload, CheckoutResponse>(
+      ENDPOINTS.CHECKOUT_AJAX,
+      payload,
+    );
   }
 
-  private __payContinue__(checkoutResponse: any, token: string, callbackUrl: string) {
-    const getOrder = () => this.__order__(token);
-
+  private async continuePayment(
+    checkoutResponse: CheckoutResponse,
+    token: string,
+    callbackUrl: string,
+  ): Promise<Receipt> {
     if (checkoutResponse.url.startsWith(callbackUrl)) {
-      return getOrder();
-    } else {
-      return this.__url3ds__(checkoutResponse, callbackUrl).then(getOrder);
+      return this.getOrder(token);
     }
+    await this.perform3ds(checkoutResponse, callbackUrl);
+    return this.getOrder(token);
   }
 
-  private __url3ds__(checkout: any, callbackUrl: string) {
-    let body;
-    let contentType;
-    let sendData = checkout.send_data;
-    if (sendData.PaReq === '') {
-      body = JSON.stringify(sendData);
-      contentType = 'application/json';
-    } else {
-      body = 'MD=' + encodeURIComponent(sendData.MD) +
-        '&PaReq=' + encodeURIComponent(sendData.PaReq) +
-        '&TermUrl=' + encodeURIComponent(sendData.TermUrl);
-      contentType = 'application/x-www-form-urlencoded'
-    }
-    let cookies: string | null;
-    return fetch(checkout.url, {
+  private async perform3ds(
+    checkout: CheckoutResponse,
+    callbackUrl: string,
+  ): Promise<void> {
+    const sendData = checkout.send_data;
+    const isJson = sendData.PaReq === '';
+    const body = isJson
+      ? JSON.stringify(sendData)
+      : `MD=${encodeURIComponent(String(sendData.MD ?? ''))}&PaReq=${encodeURIComponent(String(sendData.PaReq ?? ''))}&TermUrl=${encodeURIComponent(String(sendData.TermUrl ?? ''))}`;
+    const contentType = isJson
+      ? 'application/json'
+      : 'application/x-www-form-urlencoded';
+
+    const res = await fetch(checkout.url, {
       method: 'POST',
       headers: {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         'Content-Type': contentType,
-        'User-Agent': 'React-Native'
-      },
-      body: body
-    })
-      .then((response) => {
-        cookies = response.headers.get('set-cookie');
-        return response.text();
-      })
-      .then((html) => {
-        return this.__cloudipspView__((cloudipspView: CloudipspWebView) => {
-          const cloudipspViewPrivate = cloudipspView as unknown as CloudipspWebviewPrivate;
-          return cloudipspViewPrivate.__confirm__(checkout.url, html, cookies, this.__baseUrl__, callbackUrl);
-        });
-      });
-  }
-
-  private __getCallbackUrl__(token: string): Promise<string> {
-    return this.__apiCall__('/api/checkout/merchant/order', { token })
-      .then((response) => {
-        return response.response_url;
-      });
-  }
-
-  private __order__(token: string): Promise<Receipt> {
-    return this.__apiCall__('/api/checkout/merchant/order', { token })
-      .then((response) => {
-        return Receipt.__fromOrderData__(response.order_data, response.response_url);
-      });
-  }
-
-  private __apiCall__(path: string, request: any): Promise<any> {
-    return this.__callJson__(path, request)
-      .then((response) => {
-        if (response.response_status === 'success') {
-          return response;
-        } else {
-          this.__handleResponseError__(response)
-        }
-      });
-  }
-
-  private __handleResponseError__(response: any): void {
-    throw new Failure(response.error_message, response.error_code, response.request_id);
-  }
-
-  private __callJson__(path: string, request: any): Promise<any> {
-    const url = this.__baseUrl__ + path;
-    if (__DEV__) {
-      console.log(`Request. ${url}`, request);
-    }
-
-    return fetch(url, {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
         'User-Agent': 'React-Native',
-        'SDK-OS': Platform.OS,
-        'SDK-Version': '1.0.0'
       },
-      body: JSON.stringify({ request })
-    })
-      .then((response) => {
-        return response.json();
-      })
-      .then((json) => {
-        if (__DEV__) {
-          console.log(`Response. ${url}`, json);
-        }
-        return json.response;
-      });
+      body,
+    });
+
+    const cookies = res.headers.get('set-cookie');
+    const html = await res.text();
+
+    await this.cloudipspView((view: typeof CloudipspWebView) =>
+      view.__confirm__?.({
+        baseUrl: checkout.url,
+        html,
+        cookies,
+        apiHost: this.baseUrl.replace(/https?:\/\//, '').replace(/\/$/, ''),
+        callbackUrl,
+      }),
+    );
+  }
+
+  private async getCallbackUrl(token: string): Promise<string> {
+    const response = await this.apiClient.post<{token: string}, OrderResponse>(
+      ENDPOINTS.MERCHANT_ORDER,
+      {token},
+    );
+    if (!response.response_url)
+      throw new Failure('Missing response_url', undefined, undefined);
+    return response.response_url;
+  }
+
+  private async getOrder(token: string): Promise<Receipt> {
+    const response = await this.apiClient.post<{token: string}, OrderResponse>(
+      ENDPOINTS.MERCHANT_ORDER,
+      {token},
+    );
+    return Receipt.fromOrderData(response.order_data, response.response_url);
+  }
+
+  private throwResponseError(
+    message?: string,
+    code?: string,
+    requestId?: string,
+  ): never {
+    throw new Failure(message ?? 'Server error', code, requestId);
   }
 }

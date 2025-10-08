@@ -1,6 +1,5 @@
 import {CardFieldBase} from './CardFieldBase';
 
-
 function getSelfName(): string {
   return 'CardFieldNumber';
 }

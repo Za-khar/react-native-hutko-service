@@ -36,21 +36,21 @@ export class Card {
   };
 
   private readonly __getCardNumber__ = (): string => {
-    throw new Error('Unimplemented')
+    throw new Error('Unimplemented');
   };
   private readonly __getExpYy__ = (): number => {
-    throw new Error('Unimplemented')
+    throw new Error('Unimplemented');
   };
   private readonly __getExpMm__ = (): number => {
-    throw new Error('Unimplemented')
+    throw new Error('Unimplemented');
   };
   private readonly __getCvv__ = (): string => {
-    throw new Error('Unimplemented')
+    throw new Error('Unimplemented');
   };
 
   public readonly isValidCardNumber = () => {
     const cardNumber = this.__getCardNumber__();
-    if (!(12 <= cardNumber.length && cardNumber.length <= 19)) {
+    if (!(cardNumber.length >= 12 && cardNumber.length <= 19)) {
       return false;
     }
     return lunaCheck(cardNumber);
@@ -71,24 +71,19 @@ export class Card {
   };
 
   public readonly isValidExpireDate = (): boolean => {
-    let mm = this.__getExpMm__();
-    if (!isValidExpireMonthValue(mm)) {
-      return false;
-    }
-    let yy = this.__getExpYy__();
-    if (!isValidExpireYearValue(yy)) {
-      return false;
-    }
+    const mm = this.__getExpMm__();
+
+    const yy = this.__getExpYy__();
 
     const now = new Date();
     const year = now.getFullYear() - 2000;
     const month = now.getMonth() + 1;
 
-    return (yy > year) || (yy >= year && mm >= month);
+    return yy > year || (yy >= year && mm >= month);
   };
 
   public readonly isValidCvv = (): boolean => {
-    let cvv = this.__getCvv__();
+    const cvv = this.__getCvv__();
     if (isCvv4Length(this.__getCardNumber__())) {
       return cvv.length === 4;
     } else {
@@ -97,9 +92,9 @@ export class Card {
   };
 
   public readonly isValidCard = (): boolean => {
-    return this.isValidCardNumber() &&
-      this.isValidExpireDate() &&
-      this.isValidCvv();
+    return (
+      this.isValidCardNumber() && this.isValidExpireDate() && this.isValidCvv()
+    );
   };
 }
 

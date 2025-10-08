@@ -1,15 +1,18 @@
 import React from 'react';
 import {TextInput, TextInputProps} from 'react-native';
 
-export type CloudipspInputProps = TextInputProps
+export type CloudipspInputProps = TextInputProps;
 
 type State = {
   __text__: string;
   __enabled__: boolean;
   __max_length__: number;
-}
+};
 
-export abstract class CardFieldBase extends React.Component<CloudipspInputProps, State> {
+export abstract class CardFieldBase extends React.Component<
+  CloudipspInputProps,
+  State
+> {
   public static readonly getInputName: () => string;
 
   state: State = {
@@ -21,11 +24,11 @@ export abstract class CardFieldBase extends React.Component<CloudipspInputProps,
   private __onChangeText__?: (text: string) => void;
 
   private readonly _setEnable = (value: boolean): void => {
-    this.setState({ __enabled__: value });
+    this.setState({__enabled__: value});
   };
 
   protected readonly _setText = (text: string): void => {
-    this.setState({ __text__: text });
+    this.setState({__text__: text});
   };
 
   protected readonly _getText = (): string => {
@@ -33,7 +36,7 @@ export abstract class CardFieldBase extends React.Component<CloudipspInputProps,
   };
 
   protected readonly _setMaxLength = (value: number): void => {
-    this.setState({ __max_length__: value });
+    this.setState({__max_length__: value});
   };
 
   protected _isSecure(): boolean {
@@ -53,28 +56,26 @@ export abstract class CardFieldBase extends React.Component<CloudipspInputProps,
   }
 
   render() {
-    return (<TextInput
-      ref={this._inputRef}
-
-      {...this.props}
-
-      maxLength={this.state.__max_length__}
-      secureTextEntry={this._isSecure()}
-      multiline={false}
-      editable={this.state.__enabled__}
-      keyboardType={'numeric'}
-
-      value={this.state.__text__}
-      onChangeText={(text) => {
-        if (this.__onChangeText__) {
-          this.__onChangeText__(text);
-        }
-        this.setState({ __text__: text });
-      }}
-    />);
+    return (
+      <TextInput
+        ref={this._inputRef}
+        {...this.props}
+        maxLength={this.state.__max_length__}
+        secureTextEntry={this._isSecure()}
+        multiline={false}
+        editable={this.state.__enabled__}
+        keyboardType={'numeric'}
+        value={this.state.__text__}
+        onChangeText={text => {
+          if (this.__onChangeText__) {
+            this.__onChangeText__(text);
+          }
+          this.setState({__text__: text});
+        }}
+      />
+    );
   }
 }
-
 
 export interface CardFieldBasePrivate {
   _selfName(): string;

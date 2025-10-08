@@ -1,3 +1,34 @@
+export interface ReceiptData {
+  masked_card: string;
+  card_bin: string;
+  amount: string | number;
+  payment_id: number;
+  currency: string;
+  order_status: string;
+  tran_type: string;
+  sender_cell_phone: string;
+  sender_account: string;
+  card_type: string;
+  rrn: string;
+  approval_code: string;
+  response_code: string;
+  product_id: string;
+  rectoken: string;
+  rectoken_lifetime?: string;
+  reversal_amount: number;
+  settlement_amount: number;
+  settlement_currency: string;
+  settlement_date?: string;
+  eci: number;
+  fee: number;
+  actual_amount: number;
+  actual_currency: string;
+  payment_system: string;
+  verification_status: string;
+  signature: string;
+  email: string;
+}
+
 export class Receipt {
   public readonly maskedCard: string;
   public readonly cardBin: string;
@@ -14,11 +45,11 @@ export class Receipt {
   public readonly responseCode: string;
   public readonly productId: string;
   public readonly recToken: string;
-  public readonly recTokenLifeTime: Date | undefined;
+  public readonly recTokenLifeTime?: Date;
   public readonly reversalAmount: number;
   public readonly settlementAmount: number;
   public readonly settlementCurrency: string;
-  public readonly settlementDate: Date | undefined;
+  public readonly settlementDate?: Date;
   public readonly eci: number;
   public readonly fee: number;
   public readonly actualAmount: number;
@@ -27,37 +58,42 @@ export class Receipt {
   public readonly verificationStatus: string;
   public readonly signature: string;
   public readonly email: string;
-  public readonly responseUrl: string | undefined;
+  public readonly responseUrl?: string;
 
-  constructor(maskedCard: string,
-              cardBin: string,
-              amount: number,
-              paymentId: number,
-              currency: string,
-              status: string,
-              transactionType: string,
-              senderCellPhone: string,
-              senderAccount: string,
-              cardType: string,
-              rrn: string,
-              approvalCode: string,
-              responseCode: string,
-              productId: string,
-              recToken: string,
-              recTokenLifeTime: Date | undefined,
-              reversalAmount: number,
-              settlementAmount: number,
-              settlementCurrency: string,
-              settlementDate: Date | undefined,
-              eci: number,
-              fee: number,
-              actualAmount: number,
-              actualCurrency: string,
-              paymentSystem: string,
-              verificationStatus: string,
-              signature: string,
-              email: string,
-              responseUrl: string | undefined) {
+  private readonly rawData: ReceiptData;
+
+  constructor(
+    maskedCard: string,
+    cardBin: string,
+    amount: number,
+    paymentId: number,
+    currency: string,
+    status: string,
+    transactionType: string,
+    senderCellPhone: string,
+    senderAccount: string,
+    cardType: string,
+    rrn: string,
+    approvalCode: string,
+    responseCode: string,
+    productId: string,
+    recToken: string,
+    recTokenLifeTime?: Date,
+    reversalAmount: number = 0,
+    settlementAmount: number = 0,
+    settlementCurrency: string = '',
+    settlementDate?: Date,
+    eci: number = 0,
+    fee: number = 0,
+    actualAmount: number = 0,
+    actualCurrency: string = '',
+    paymentSystem: string = '',
+    verificationStatus: string = '',
+    signature: string = '',
+    email: string = '',
+    responseUrl?: string,
+    rawData?: ReceiptData,
+  ) {
     this.maskedCard = maskedCard;
     this.cardBin = cardBin;
     this.amount = amount;
@@ -87,39 +123,21 @@ export class Receipt {
     this.signature = signature;
     this.email = email;
     this.responseUrl = responseUrl;
+    this.rawData = rawData || ({} as ReceiptData);
   }
 
-  public dumpFields!: () => any;
-
-  static __easyDateParser__(str: string): Date | undefined {//expected 05.01.2021 01:31:04
-    //why should we use own parser instead of import moment or ... ?
-    //because we are library and we:
-    //1. should be as tiny as possible
-    //2. our clients/developers may use different moment/... versions.
-    try {
-      if (!str || str.length === 0) {
-        return undefined;
-      }
-      const [date, time] = str.split(' ');
-      const [days, months, years] = date.split('.');
-      const [hours, minutes, seconds] = time.split(':');
-      return new Date(
-        Number(years),
-        Number(months) - 1,
-        Number(days),
-        Number(hours),
-        Number(minutes),
-        Number(seconds),
-        0
-      );
-    } catch (e) {
-      return undefined;
-    }
+  /**
+   * Returns the raw order data used to create this receipt
+   */
+  public dumpFields(): ReceiptData {
+    return {...this.rawData};
   }
 
-  static __fromOrderData__(orderData: any, responseUrl?: string): Receipt {
-    let receipt = new Receipt
-    (
+  /**
+   * Creates a Receipt instance from order data
+   */
+  static fromOrderData(orderData: ReceiptData, responseUrl?: string): Receipt {
+    return new Receipt(
       orderData.masked_card,
       orderData.card_bin,
       Number(orderData.amount),
@@ -135,11 +153,11 @@ export class Receipt {
       orderData.response_code,
       orderData.product_id,
       orderData.rectoken,
-      this.__easyDateParser__(orderData.rectoken_lifetime),
+      Receipt.parseEasyDate(orderData.rectoken_lifetime),
       orderData.reversal_amount,
       orderData.settlement_amount,
       orderData.settlement_currency,
-      this.__easyDateParser__(orderData.settlement_date),
+      Receipt.parseEasyDate(orderData.settlement_date),
       orderData.eci,
       orderData.fee,
       orderData.actual_amount,
@@ -149,10 +167,56 @@ export class Receipt {
       orderData.signature,
       orderData.email,
       responseUrl,
+      orderData,
     );
-    receipt.dumpFields = () => {
-      return orderData;
-    };
-    return receipt;
+  }
+
+  /**
+   * Parses date strings in format "DD.MM.YYYY HH:mm:ss"
+   * Returns undefined for invalid or empty input
+   */
+  private static parseEasyDate(dateString?: string): Date | undefined {
+    if (!dateString?.trim()) {
+      return undefined;
+    }
+
+    try {
+      // Expected format: "05.01.2021 01:31:04"
+      const [datePart, timePart] = dateString.split(' ');
+
+      if (!datePart || !timePart) {
+        return undefined;
+      }
+
+      const [day, month, year] = datePart.split('.').map(Number);
+      const [hours, minutes, seconds] = timePart.split(':').map(Number);
+
+      // Validate date components
+      if (
+        !Receipt.isValidDateComponent(day, 1, 31) ||
+        !Receipt.isValidDateComponent(month, 1, 12) ||
+        !Receipt.isValidDateComponent(year, 2000, 2100) ||
+        !Receipt.isValidDateComponent(hours, 0, 23) ||
+        !Receipt.isValidDateComponent(minutes, 0, 59) ||
+        !Receipt.isValidDateComponent(seconds, 0, 59)
+      ) {
+        return undefined;
+      }
+
+      return new Date(year, month - 1, day, hours, minutes, seconds);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Validates if a date component is within expected range
+   */
+  private static isValidDateComponent(
+    value: number,
+    min: number,
+    max: number,
+  ): boolean {
+    return !isNaN(value) && value >= min && value <= max;
   }
 }
