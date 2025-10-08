@@ -6,6 +6,11 @@
     "jsx": "react",
     "skipLibCheck": true,
     "ignoreDeprecations": "6.0",
-    "esModuleInterop": false
+    "esModuleInterop": false,
+    "paths": {
+      "react-native-hutko-service": [
+        "./node_modules/react-native-hutko-service/src/index.ts"
+      ]
+    }
   }
 }

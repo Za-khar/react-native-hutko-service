@@ -2,9 +2,7 @@
   "extends": "@react-native/typescript-config/tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "baseUrl": "./src",
-    "ignoreDeprecations": "6.0",
-    "lib": ["dom"],
+    "lib": ["dom", "es6"],
     "allowImportingTsExtensions": false
   },
   "include": ["./src"]

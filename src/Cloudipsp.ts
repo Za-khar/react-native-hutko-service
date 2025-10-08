@@ -484,14 +484,14 @@ export class Cloudipsp {
     const cookies = res.headers.get('set-cookie');
     const html = await res.text();
 
-    await this.cloudipspView((view: typeof CloudipspWebView) =>
-      view.__confirm__?.({
-        baseUrl: checkout.url,
+    await this.cloudipspView((view: CloudipspWebView) =>
+      view.confirm?.(
+        checkout.url,
         html,
         cookies,
-        apiHost: this.baseUrl.replace(/https?:\/\//, '').replace(/\/$/, ''),
+        this.baseUrl.replace(/https?:\/\//, '').replace(/\/$/, ''),
         callbackUrl,
-      }),
+      ),
     );
   }
 

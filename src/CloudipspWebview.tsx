@@ -1,39 +1,27 @@
-import React, {useRef, useState, useCallback} from 'react';
-import {Platform, View, StyleSheet} from 'react-native';
+import React from 'react';
+import {Platform, StyleSheet, View} from 'react-native';
 import {WebView} from 'react-native-webview';
 import {WebViewNavigationEvent} from 'react-native-webview/lib/WebViewTypes';
 
 import {Receipt} from './models';
 import {Native} from './Native';
 
-const URL_START_PATTERN = 'http://secure-redirect.cloudipsp.com/submit/#';
-
 const addViewportMeta = `(${String(() => {
   const meta = document.createElement('meta');
-  meta.setAttribute('content', 'width=device-width, user-scalable=0');
+  meta.setAttribute('content', 'width=device-width, user-scalable=0,');
   meta.setAttribute('name', 'viewport');
-
   const elementHead = document.getElementsByTagName('head');
-  if (elementHead?.[0]) {
+  if (elementHead) {
     elementHead[0].appendChild(meta);
   } else {
     const head = document.createElement('head');
     head.appendChild(meta);
-    document.documentElement.prepend(head);
   }
 })})();`;
 
-interface WebViewState {
-  baseUrl?: string;
-  html?: string;
-  cookies?: string | null;
-  apiHost?: string;
-  callbackUrl?: string;
-}
+interface Props {}
 
-interface CloudipspWebViewProps {}
-
-export interface ConfirmationParams {
+interface LoadingState {
   baseUrl: string;
   html: string;
   cookies: string | null;
@@ -41,139 +29,129 @@ export interface ConfirmationParams {
   callbackUrl: string;
 }
 
-const useWebViewState = () => {
-  const [state, setState] = useState<WebViewState>({});
+type State = {status: 'idle'} | ({status: 'loading'} & LoadingState);
 
-  const setWebViewState = useCallback((newState: WebViewState) => {
-    setState(newState);
-  }, []);
+export class CloudipspWebView extends React.Component<Props, State> {
+  state: State = {status: 'idle'};
 
-  const resetState = useCallback(() => {
-    setState({});
-  }, []);
+  private readonly urlStartPattern =
+    'http://secure-redirect.cloudipsp.com/submit/#';
+  private readonly webViewRef = React.createRef<WebView>();
+  private onSuccess?: (receipt: Receipt) => void;
+  private onFailure?: () => void;
 
-  return {
-    state,
-    setWebViewState,
-    resetState,
-  };
-};
+  readonly confirm = (
+    baseUrl: string,
+    html: string,
+    cookies: string | null,
+    apiHost: string,
+    callbackUrl: string,
+  ): Promise<Receipt> => {
+    if (this.onSuccess) {
+      throw new Error('CloudipspWebView already waiting for confirmation');
+    }
 
-export const CloudipspWebView: React.FC<CloudipspWebViewProps> & {
-  __confirm__?: (params: ConfirmationParams) => Promise<Receipt>;
-} = () => {
-  const webViewRef = useRef<WebView>(null);
-  const {state, setWebViewState, resetState} = useWebViewState();
+    if (cookies && Platform.OS === 'android') {
+      Native.addCookies(baseUrl, cookies);
+    }
 
-  const callbacksRef = useRef<{
-    onSuccess?: (receipt: Receipt) => void;
-    onFailure?: () => void;
-  }>({});
-
-  const __confirm__ = useCallback(
-    ({
+    this.setState({
+      status: 'loading',
       baseUrl,
       html,
       cookies,
       apiHost,
       callbackUrl,
-    }: ConfirmationParams): Promise<Receipt> => {
-      if (callbacksRef.current.onSuccess) {
-        throw new Error('CloudipspWebView already waiting for confirmation');
+    });
+
+    return new Promise((resolve, reject) => {
+      this.onSuccess = resolve;
+      this.onFailure = reject;
+    });
+  };
+
+  private readonly onLoadStart = (event: WebViewNavigationEvent) => {
+    if (!this.onSuccess || this.state.status !== 'loading') {
+      return;
+    }
+
+    const {apiHost, callbackUrl} = this.state;
+    const url = event.nativeEvent.url;
+
+    const detectsStartPattern = url.startsWith(this.urlStartPattern);
+    const detectsCallbackUrl = url.startsWith(callbackUrl);
+    const detectsApiToken = url.startsWith(`${apiHost}/api/checkout?token=`);
+
+    if (detectsStartPattern || detectsCallbackUrl || detectsApiToken) {
+      this.handlePaymentSuccess(url, detectsStartPattern);
+    }
+  };
+
+  private handlePaymentSuccess = (url: string, isStartPattern: boolean) => {
+    let receipt: Receipt;
+
+    if (isStartPattern) {
+      const jsonOfConfirmation = url.split(this.urlStartPattern)[1];
+      let response;
+      try {
+        response = JSON.parse(jsonOfConfirmation);
+      } catch (e) {
+        response = JSON.parse(decodeURIComponent(jsonOfConfirmation));
       }
+      receipt = Receipt.fromOrderData(response.params);
+    }
 
-      if (cookies && Platform.OS === 'android') {
-        Native.addCookies(baseUrl, cookies);
-      }
+    this.setState({status: 'idle'}, () => {
+      this.onSuccess!(receipt);
+      this.clearCallbacks();
+    });
 
-      setWebViewState({baseUrl, html, cookies, apiHost, callbackUrl});
+    this.webViewRef.current?.goBack();
+  };
 
-      return new Promise((resolve, reject) => {
-        callbacksRef.current = {onSuccess: resolve, onFailure: reject};
-      });
-    },
-    [setWebViewState],
-  );
+  private clearCallbacks = () => {
+    this.onSuccess = undefined;
+    this.onFailure = undefined;
+  };
 
-  const handleLoadStart = useCallback(
-    (event: WebViewNavigationEvent) => {
-      const {onSuccess} = callbacksRef.current;
-      const {baseUrl, apiHost, callbackUrl} = state;
+  render(): React.ReactNode {
+    if (this.state.status === 'idle') {
+      return <View />;
+    }
 
-      if (!onSuccess || !baseUrl || !apiHost || !callbackUrl) {
-        return;
-      }
-
-      const url = event.nativeEvent.url;
-
-      const detectsStartPattern = url.startsWith(URL_START_PATTERN);
-      const detectsCallbackUrl = url.startsWith(callbackUrl);
-      const detectsApiToken = url.startsWith(`${apiHost}/api/checkout?token=`);
-
-      if (detectsStartPattern || detectsCallbackUrl || detectsApiToken) {
-        let receipt: Receipt | null = null;
-
-        if (detectsStartPattern) {
-          const jsonOfConfirmation = url.split(URL_START_PATTERN)[1];
-          let response;
-
-          try {
-            response = JSON.parse(jsonOfConfirmation);
-          } catch {
-            response = JSON.parse(decodeURIComponent(jsonOfConfirmation));
-          }
-
-          receipt = Receipt.fromOrderData(response.params);
-        }
-
-        resetState();
-        !!receipt && onSuccess(receipt);
-        callbacksRef.current = {};
-        webViewRef.current?.goBack();
-      }
-    },
-    [state, resetState],
-  );
-
-  const renderWebView = useCallback(() => {
-    if (!state.baseUrl || !state.html) return null;
+    const {baseUrl, html} = this.state;
 
     return (
       <WebView
-        style={styles.webview}
-        ref={webViewRef}
-        javaScriptEnabled
-        domStorageEnabled
-        scalesPageToFit
-        source={{baseUrl: state.baseUrl, html: state.html}}
+        style={styles.webView}
+        ref={this.webViewRef}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        scalesPageToFit={true}
+        source={{baseUrl, html}}
         injectedJavaScript={addViewportMeta}
-        onLoadStart={handleLoadStart}
+        onLoadStart={this.onLoadStart}
       />
     );
-  }, [state.baseUrl, state.html, handleLoadStart]);
-
-  CloudipspWebView.__confirm__ = __confirm__;
-
-  if (!state.baseUrl) {
-    return <View style={styles.container} />;
   }
-
-  return renderWebView();
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  webview: {
+  webView: {
     flex: 1,
   },
 });
 
 export type CloudipspWebviewProvider = (
-  callback: (webView: typeof CloudipspWebView) => void,
+  callback: (webView: CloudipspWebView) => void,
 ) => void;
 
 export interface CloudipspWebviewPrivate {
-  __confirm__(params: ConfirmationParams): Promise<Receipt>;
+  confirm(
+    baseUrl: string,
+    html: string,
+    cookies: string | null,
+    apiHost: string,
+    callbackUrl: string,
+  ): Promise<Receipt>;
 }
