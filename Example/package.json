@@ -9,9 +9,8 @@
     "@react-native-picker/picker": "^2.11.2",
     "react": "19.0.0",
     "react-native": "0.78.3",
-    "react-native-cloudipsp": "1.0.0",
-    "react-native-hutko-service": "github:Za-khar/react-native-hutko-service",
-    "react-native-webview": "13.16.0"
+    "react-native-hutko-service": "file:../",
+    "react-native-webview": "13.10.7"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

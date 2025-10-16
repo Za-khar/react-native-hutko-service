@@ -1,7 +1,6 @@
 import React from 'react';
 import {Platform, StyleSheet, View} from 'react-native';
-import {WebView} from 'react-native-webview';
-import {WebViewNavigationEvent} from 'react-native-webview/lib/WebViewTypes';
+import {WebView, WebViewNavigationEvent} from 'react-native-webview';
 
 import {Receipt} from './models';
 import {Native} from './Native';

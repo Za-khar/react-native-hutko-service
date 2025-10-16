@@ -17,7 +17,7 @@ import {
 import { PaymentState, PaymentHook, PaymentRefs, EMode } from '../types'
 
 const initialState: PaymentState = {
-  merchant: '1396424',
+  merchant: '1700002',
   amount: '1',
   ccy: 'UAH',
   email: 'example@test.com',
@@ -52,8 +52,11 @@ export const usePayment = (): PaymentHook => {
   }, [state.amount, state.ccy, state.description, state.email])
 
   const cloudipsp = useCallback((): Cloudipsp => {
-    return new Cloudipsp(Number(state.merchant), payConfirmator => {
+    return new Cloudipsp(Number(state.merchant), async payConfirmator => {
       updateState({ webView: 1 })
+      if (!cloudipspWebViewRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
       return payConfirmator(cloudipspWebViewRef.current!)
     })
   }, [state.merchant, updateState])
